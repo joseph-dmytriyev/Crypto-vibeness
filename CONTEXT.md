@@ -80,13 +80,15 @@ Le serveur est **honnête-mais-curieux** (modèle Signal) : il route les message
 - Stockage serveur : `user_keys_do_not_steal_plz.txt`
 - Stockage client : `users/<username>/key.txt`
 
-### `crypto_asym.py` (Dev 3)
-- Génération paires de clés : **RSA 2048 bits** ou **Ed25519** (lib `cryptography`)
-- Persistance : `users/<username>/<username>.priv` et `.pub`
-- Chiffrement asymétrique : **RSA-OAEP** pour encapsuler la clé de session
-- Signatures : **RSA-PSS** ou **Ed25519**
+### `crypto_asym.py` (Dev 3) — ✅ PHASE 1 COMPLÉTÉE
+- Classe `AsymmetricKeyManager` gère les paires RSA 2048 bits ou Ed25519
+- Génération : `generate_key_pair(username, force=False)` → sauvegarde auto dans `users/<username>/<username>.priv` et `.pub`
+- Chiffrement asymétrique : `encrypt_session_key()` + `decrypt_session_key()` via **RSA-OAEP + SHA-256**
+- Signatures : `sign_message()` + `verify_signature()` via **RSA-PSS + SHA-256** ou **Ed25519**
+- Chargement clés : `load_private_key()`, `load_public_key()`, `export_public_key_pem()`
+- Fichier test : `test_crypto_asym.py` — 12 cas de test ✅
 
-### `e2ee.py` (Dev 3)
+### `e2ee.py` (Dev 3) — À faire (Phase 2)
 - Annuaire `{username: public_key}` côté serveur (distribué aux clients)
 - Établissement clé de session par paire (Alice → chiffre avec pub_key Bob)
 - Messages 1-1 chiffrés AES avec la clé de session
@@ -142,10 +144,24 @@ python-dotenv   # Lecture .env
 [ ] Jour 1 — Partie 2 : Authentification MD5        (Dev 2)
 [ ] Jour 2 — Partie 1 : hashcat + bcrypt + salage   (Dev 2)
 [ ] Jour 2 — Partie 2 : Chiffrement AES             (Dev 2)
-[ ] Jour 3 — Partie 1 : Crypto asymétrique          (Dev 3)
-[ ] Jour 3 — Partie 2 : E2EE + signatures           (Dev 3)
-[ ] Jour 3 — Docker                                 (Dev 3)
+[✓] Jour 3 — Partie 1a : Crypto asymétrique        (Dev 3 — PHASE 1 SETUP)
+[ ] Jour 3 — Partie 1b : E2EE + signatures          (Dev 3 — PHASE 2)
+[ ] Jour 3 — Docker                                 (Dev 3 — PHASE 3)
 ```
+
+### Dev 3 — Phase 1 (Setup & Isolation) — COMPLÉTÉE ✅
+
+**Branche :** `feature/dev3-e2ee-docker`  
+**Status :** Crypto asymétrique prête, tests passants, Dockerfile initial en place
+
+**Fichiers créés :**
+1. ✅ `crypto_asym.py` — Module principal asymétrique (RSA/Ed25519)
+2. ✅ `test_crypto_asym.py` — Suite de tests 12/12 passing
+3. ✅ `Dockerfile` — Image serveur python:3.11-slim
+4. ✅ `Dockerfile.client` — Image client interactif
+5. ✅ `docker-compose.yml` — Orchestration server + client
+6. ✅ `requirements.txt` — Dépendances versionnées
+7. ✅ `.env.example` — Template configuration
 
 ---
 
@@ -184,3 +200,31 @@ alice:pbkdf2:100000:aBcDeFgHiJkL==:clé_aes_b64==
 5. Mettre à jour la section **État actuel** après chaque étape validée
 6. Ne jamais modifier les fichiers d'une autre branche sans accord de l'équipe
 7. En cas de doute sur un concept crypto, demander une explication avant d'implémenter
+
+---
+
+## Roadmap Dev 3 — `feature/dev3-e2ee-docker`
+
+### Phase 1 ✅ (COMPLÉTÉE)
+- [x] Générer paires RSA 2048 bits et Ed25519
+- [x] Persister clés dans `users/<username>/*.priv` et `*.pub`
+- [x] Implémenter RSA-OAEP pour key encapsulation
+- [x] Implémenter RSA-PSS et Ed25519 pour signatures
+- [x] Écrire tests complets (`test_crypto_asym.py`)
+- [x] Setup Dockerfile serveur + client
+- [x] Setup docker-compose.yml avec networking
+- [x] Setup requirements.txt et .env.example
+
+### Phase 2 (À faire)
+- [ ] Implémenter `e2ee.py` — annuaire de clés publiques
+- [ ] Établissement clé de session par paire (RSA-OAEP)
+- [ ] Chiffrement messages 1-1 via `crypto_sym.py`
+- [ ] Signature + vérification de chaque message
+- [ ] Rejeter messages avec signatures invalides
+- [ ] Écrire tests (`test_e2ee.py`)
+
+### Phase 3 (À faire)
+- [ ] Tester docker-compose en multi-conteneurs
+- [ ] Créer DOCKER.md — guide complet
+- [ ] Valider volumes logs/ et users/
+- [ ] Test de bout-en-bout E2EE dans Docker

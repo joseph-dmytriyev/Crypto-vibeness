@@ -1,0 +1,12 @@
+# Core cryptography library (PyCA/cryptography)
+cryptography>=42.0.0,<43.0.0
+
+# Password hashing
+bcrypt>=4.1.0,<5.0.0
+argon2-cffi>=23.1.0,<24.0.0
+
+# Terminal utilities
+colorama>=0.4.6,<1.0.0
+
+# Environment variable management
+python-dotenv>=1.0.0,<2.0.0
