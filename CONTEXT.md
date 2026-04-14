@@ -139,9 +139,9 @@ python-dotenv   # Lecture .env
 
 ```
 [ ] Jour 1 — Partie 1 : Serveur IRC de base        (Dev 1)
-[ ] Jour 1 — Partie 2 : Authentification MD5        (Dev 2)
-[ ] Jour 2 — Partie 1 : hashcat + bcrypt + salage   (Dev 2)
-[ ] Jour 2 — Partie 2 : Chiffrement AES             (Dev 2)
+[x] Jour 1 — Partie 2 : Authentification MD5        (Dev 2)
+[x] Jour 2 — Partie 1 : hashcat + bcrypt + salage   (Dev 2)
+[x] Jour 2 — Partie 2 : Chiffrement AES             (Dev 2)
 [ ] Jour 3 — Partie 1 : Crypto asymétrique          (Dev 3)
 [ ] Jour 3 — Partie 2 : E2EE + signatures           (Dev 3)
 [ ] Jour 3 — Docker                                 (Dev 3)
