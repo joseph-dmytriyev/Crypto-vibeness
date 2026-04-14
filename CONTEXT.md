@@ -88,12 +88,27 @@ Le serveur est **honnête-mais-curieux** (modèle Signal) : il route les message
 - Chargement clés : `load_private_key()`, `load_public_key()`, `export_public_key_pem()`
 - Fichier test : `test_crypto_asym.py` — 12 cas de test ✅
 
-### `e2ee.py` (Dev 3) — À faire (Phase 2)
-- Annuaire `{username: public_key}` côté serveur (distribué aux clients)
-- Établissement clé de session par paire (Alice → chiffre avec pub_key Bob)
-- Messages 1-1 chiffrés AES avec la clé de session
-- Signature de chaque message avec priv_key de l'expéditeur
-- Vérification + rejet si signature invalide
+### `crypto_sym.py` (Dev 2/Dev 3 — Phase 2) — ✅ COMPLÉTÉE
+- Classe `SymmetricEncryption` gère AES-256-GCM
+- Chiffrement : `encrypt_message(plaintext, key)` → base64(nonce || ciphertext || tag)
+- Déchiffrement : `decrypt_message(payload_b64, key)` → plaintext
+- Génération clé : `generate_session_key()` → 32 bytes aléatoires
+- Dérivation : `derive_key_from_password()` via **PBKDF2-HMAC-SHA256**
+- Nonce unique par message (96 bits, prévient patterns)
+- Authentification intégrée (GCM tag = 128 bits)
+
+### `e2ee.py` (Dev 3 — Phase 2) — ✅ COMPLÉTÉE
+- Classe `E2EEMessage` — sérialisation JSON messages E2EE
+- Classe `E2EEKeyRegistry` — annuaire clés publiques {username: pub_key}
+- Classe `E2EEManager` — orchestration complète E2EE
+  * **Key Exchange** : `create_session_key_exchange()` → génère AES key + la chiffre RSA-OAEP
+  * **Prepare** : `prepare_e2ee_message()` → Sign (RSA-PSS) + Encrypt (AES-256-GCM)
+  * **Receive** : `receive_e2ee_message()` → Decrypt + Verify signature (rejette si invalide)
+  * **Session Key** : `decrypt_session_key()` → déchiffre via RSA-OAEP
+- Flux complet : Sign → Encrypt → Bundle → JSON (transmission serveur)
+- Réception : Deserialize → Decrypt → Verify → Return plaintext
+- Support RSA 2048 bits et Ed25519 (signatures seules)
+- Fichier test : `test_e2ee.py` — 13 cas de test ✅
 
 ---
 
@@ -144,24 +159,31 @@ python-dotenv   # Lecture .env
 [ ] Jour 1 — Partie 2 : Authentification MD5        (Dev 2)
 [ ] Jour 2 — Partie 1 : hashcat + bcrypt + salage   (Dev 2)
 [ ] Jour 2 — Partie 2 : Chiffrement AES             (Dev 2)
-[✓] Jour 3 — Partie 1a : Crypto asymétrique        (Dev 3 — PHASE 1 SETUP)
-[ ] Jour 3 — Partie 1b : E2EE + signatures          (Dev 3 — PHASE 2)
+[✓] Jour 3 — Partie 1 : Crypto asymétrique          (Dev 3 — PHASE 1)
+[✓] Jour 3 — Partie 2 : E2EE + signatures           (Dev 3 — PHASE 2)
 [ ] Jour 3 — Docker                                 (Dev 3 — PHASE 3)
 ```
 
-### Dev 3 — Phase 1 (Setup & Isolation) — COMPLÉTÉE ✅
+### Dev 3 — Phase 1 & 2 (Setup + E2EE) — COMPLÉTÉES ✅
 
 **Branche :** `feature/dev3-e2ee-docker`  
-**Status :** Crypto asymétrique prête, tests passants, Dockerfile initial en place
+**Status :** Crypto asymétrique + E2EE complètement implémentées, 25/25 tests passants
 
-**Fichiers créés :**
-1. ✅ `crypto_asym.py` — Module principal asymétrique (RSA/Ed25519)
-2. ✅ `test_crypto_asym.py` — Suite de tests 12/12 passing
+**Fichiers créés (Phase 1) :**
+1. ✅ `crypto_asym.py` — Module asymétrique RSA/Ed25519 (12 tests)
+2. ✅ `test_crypto_asym.py` — Suite tests Phase 1
 3. ✅ `Dockerfile` — Image serveur python:3.11-slim
 4. ✅ `Dockerfile.client` — Image client interactif
 5. ✅ `docker-compose.yml` — Orchestration server + client
 6. ✅ `requirements.txt` — Dépendances versionnées
 7. ✅ `.env.example` — Template configuration
+
+**Fichiers créés (Phase 2) :**
+8. ✅ `crypto_sym.py` — Module symétrique AES-256-GCM (intégration Dev 2)
+9. ✅ `e2ee.py` — Protocole E2EE complet (Key Exchange, Signatures, Verification)
+10. ✅ `test_e2ee.py` — Suite tests Phase 2 (13 tests)
+
+**Total : 25/25 tests passing ✅**
 
 ---
 
@@ -215,16 +237,19 @@ alice:pbkdf2:100000:aBcDeFgHiJkL==:clé_aes_b64==
 - [x] Setup docker-compose.yml avec networking
 - [x] Setup requirements.txt et .env.example
 
-### Phase 2 (À faire)
-- [ ] Implémenter `e2ee.py` — annuaire de clés publiques
-- [ ] Établissement clé de session par paire (RSA-OAEP)
-- [ ] Chiffrement messages 1-1 via `crypto_sym.py`
-- [ ] Signature + vérification de chaque message
-- [ ] Rejeter messages avec signatures invalides
-- [ ] Écrire tests (`test_e2ee.py`)
+### Phase 2 ✅ (COMPLÉTÉE)
+- [x] Implémenter `crypto_sym.py` — AES-256-GCM avec nonce unique
+- [x] Implémenter `e2ee.py` — annuaire de clés publiques (E2EEKeyRegistry)
+- [x] Key Exchange — RSA-OAEP encapsulation de clé AES
+- [x] Message Preparation — Sign + Encrypt (signature first)
+- [x] Message Reception — Decrypt + Verify signature
+- [x] Rejet messages signature invalide
+- [x] Écrire tests complets (`test_e2ee.py` — 13 tests)
+- [x] Support RSA et Ed25519
 
 ### Phase 3 (À faire)
 - [ ] Tester docker-compose en multi-conteneurs
+- [ ] Intégrer avec Dev 1 (networking) et Dev 2 (auth)
 - [ ] Créer DOCKER.md — guide complet
 - [ ] Valider volumes logs/ et users/
 - [ ] Test de bout-en-bout E2EE dans Docker
