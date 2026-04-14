@@ -1,0 +1,40 @@
+# ── Environnement Python ──────────────────────────
+.venv/
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+
+# ── Variables d'environnement ─────────────────────
+.env
+
+# ── Données générées automatiquement ─────────────
+this_is_safe.txt
+user_keys_do_not_steal_plz.txt
+
+# ── Clés cryptographiques (JAMAIS commiter) ───────
+*.priv
+*.pub
+users/
+
+# ── Logs ──────────────────────────────────────────
+logs/
+*.log
+
+# ── Fichiers résultat hashcat ─────────────────────
+md5_decrypted.txt
+
+# ── OS ────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── IDE ───────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo
