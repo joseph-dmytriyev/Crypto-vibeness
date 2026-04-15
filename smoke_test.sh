@@ -177,64 +177,15 @@ fi
 # ============================================
 log_info "Phase 6: Testing E2EE signature verification..."
 
-test_sig_script=$(cat <<'EOF'
-import sys
-sys.path.insert(0, '/app')
-from e2ee import E2EEManager
-from crypto_asym import AsymmetricKeyManager
-import json
-
-# Create two users with their key pairs
-alice_km = AsymmetricKeyManager('alice')
-bob_km = AsymmetricKeyManager('bob')
-
-alice_pub = alice_km.get_public_key_pem()
-bob_pub = bob_km.get_public_key_pem()
-
-# Create E2EE managers
-alice_e2ee = E2EEManager()
-bob_e2ee = E2EEManager()
-
-# Register public keys
-alice_e2ee.register_public_key('bob', bob_pub.decode())
-bob_e2ee.register_public_key('alice', alice_pub.decode())
-
-# Alice: Prepare signed + encrypted message
-original_msg = "Secret message: hello world"
-e2ee_msg = alice_e2ee.prepare_e2ee_message('alice', 'bob', original_msg)
-
-# Bob: Receive message (should verify signature and decrypt successfully)
-decrypted = bob_e2ee.receive_e2ee_message('alice', e2ee_msg)
-assert decrypted == original_msg, f"Decryption mismatch: {decrypted} != {original_msg}"
-print(f"✓ Message verification passed: '{decrypted}'")
-
-# Tampering test: modify the ciphertext
-import base64
-msg_dict = json.loads(e2ee_msg)
-original_ciphertext = msg_dict['ciphertext']
-tampered_ct = base64.b64encode(
-    base64.b64decode(original_ciphertext)[:-5] + b'XXXXX'
-).decode()
-msg_dict['ciphertext'] = tampered_ct
-tampered_msg = json.dumps(msg_dict)
-
-# Bob: Try to receive tampered message (should reject)
-try:
-    decrypted_tampered = bob_e2ee.receive_e2ee_message('alice', tampered_msg)
-    print(f"✗ FAILED: Tampered message was not rejected")
-    sys.exit(1)
-except Exception as e:
-    print(f"✓ Tampering detection passed: Message rejected as expected")
-
-print("✓ All E2EE security tests passed")
-EOF
-)
-
-if docker compose exec -T server python -c "$test_sig_script" 2>&1 | grep -q "✓ All E2EE security tests passed"; then
+if docker compose exec -T server python -m pytest -q \
+    test_e2ee.py::test_signature_verification_failure \
+    test_e2ee.py::test_message_tampering_detection >/dev/null; then
     log_success "E2EE signature verification: PASSED (tampering detected)"
 else
     log_error "E2EE signature verification: FAILED"
-    docker compose exec -T server python -c "$test_sig_script"
+    docker compose exec -T server python -m pytest -q \
+        test_e2ee.py::test_signature_verification_failure \
+        test_e2ee.py::test_message_tampering_detection
     exit 1
 fi
 

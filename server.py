@@ -115,10 +115,17 @@ async def perform_key_handshake(session: ClientSession) -> bool:
         return False
 
     try:
-        session.crypto_key = crypto_sym.get_or_create_server_key(session.username, secret)
+        transport_key = crypto_sym.get_or_create_server_key(session.username, secret)
+        iterations, salt = crypto_sym.get_server_key_config(session.username)
     except ValueError as exc:
         await session.send(f"{exc}. Goodbye.")
         return False
+
+    # Send key-derivation config in plaintext so client can derive the same key.
+    keycfg = f"KEYCFG:{iterations}:{crypto_sym._encode_b64(salt)}\n"
+    session.writer.write(keycfg.encode("utf-8"))
+    await session.writer.drain()
+    session.crypto_key = transport_key
 
     return True
 

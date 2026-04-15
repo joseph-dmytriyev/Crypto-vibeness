@@ -13,7 +13,7 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
-DEFAULT_SERVER_KEY_DB = "user_keys_do_not_steal_plz.txt"
+DEFAULT_SERVER_KEY_DB = "logs/user_keys_do_not_steal_plz.txt"
 DEFAULT_CLIENT_USERS_DIR = "users"
 DEFAULT_KDF_ALGO = "pbkdf2"
 DEFAULT_KDF_COST = 200_000
@@ -144,6 +144,28 @@ def get_or_create_server_key(
     )
     _persist_server_records(key_db_path, records)
     return new_key
+
+
+def get_server_key_config(
+    username: str,
+    db_path: str = DEFAULT_SERVER_KEY_DB,
+) -> tuple[int, bytes]:
+    """
+    Return persisted PBKDF2 configuration for a server-side user key.
+
+    Returns:
+        tuple[int, bytes]: (iterations, salt_bytes)
+    """
+    key_db_path = Path(db_path)
+    records = _load_server_records(key_db_path)
+    record = records.get(username)
+    if record is None:
+        raise ValueError("Missing key record")
+    try:
+        salt = _decode_b64(record.salt_b64)
+    except (ValueError, binascii.Error):
+        raise ValueError("Corrupted key record") from None
+    return record.cost, salt
 
 
 def _client_key_path(username: str, users_dir: str = DEFAULT_CLIENT_USERS_DIR) -> Path:

@@ -13,9 +13,9 @@ services:
       - KEY_DIR=/app/users
     volumes:
       # logs: read-write for server to write logs
-      - ./logs:/app/logs:rw
-      # users: read-only for server (cannot access private keys)
-      - ./users:/app/users:ro
+      - ./logs:/app/logs:rw,z
+      # auth db: persistent credential store on host
+      - ./this_is_safe.txt:/app/this_is_safe.txt:rw,z
     networks:
       - crypto_net
     restart: unless-stopped
@@ -43,9 +43,9 @@ services:
       - KEY_DIR=/app/users
     volumes:
       # logs: read-write for client to write logs
-      - ./logs:/app/logs:rw
-      # users: read-write for client (generates and manages keys)
-      - ./users:/app/users:rw
+      - ./logs:/app/logs:rw,z
+      # users: read-write for client (stores private/public keys locally)
+      - ./users:/app/users:rw,z
     networks:
       - crypto_net
     stdin_open: true

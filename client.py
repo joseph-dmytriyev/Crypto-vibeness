@@ -12,6 +12,7 @@ import colorama
 
 import config
 import crypto_sym
+from crypto_asym import AsymmetricKeyManager
 
 colorama.init(autoreset=True)
 
@@ -105,9 +106,24 @@ def main() -> None:
     sock.sendall((secret + "\n").encode("utf-8"))
 
     try:
-        crypto_key = crypto_sym.get_or_create_client_key(username=username, secret=secret)
-    except ValueError as exc:
-        print(f"[error] {exc}")
+        keycfg_line, buffer = recv_line(sock, buffer)
+        if not keycfg_line.startswith("KEYCFG:"):
+            raise ValueError("Missing key configuration from server")
+        _, iterations_raw, salt_b64 = keycfg_line.split(":", 2)
+        iterations = int(iterations_raw)
+        salt = crypto_sym._decode_b64(salt_b64)
+        crypto_key, _, _ = crypto_sym.derive_key_pbkdf2(secret=secret, salt=salt, iterations=iterations)
+    except (ValueError, TypeError) as exc:
+        print(f"[error] Key exchange failed: {exc}")
+        colorama.deinit()
+        sock.close()
+        return
+
+    # Ensure per-user asymmetric key pair exists locally for E2EE flows.
+    try:
+        AsymmetricKeyManager("rsa").generate_key_pair(username=username)
+    except (ValueError, OSError) as exc:
+        print(f"[error] Failed to prepare E2EE keys: {exc}")
         colorama.deinit()
         sock.close()
         return

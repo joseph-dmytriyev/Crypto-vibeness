@@ -92,8 +92,8 @@ docker compose down -v
 │                  │                      │
 │    server        │    client ×N         │
 │ (Port 9000)      │  (Interactive CLI)   │
-│ ├─ logs/         │  ├─ logs/            │
-│ └─ users/        │  └─ users/           │
+│ └─ logs/         │  ├─ logs/            │
+│                  │  └─ users/           │
 │                  │                      │
 └──────────────────┴──────────────────────┘
 ```
@@ -104,7 +104,7 @@ docker compose down -v
 
 **Volumes partagés :**
 - `./logs/` — Logs horodatés côté serveur
-- `./users/` — Clés cryptographiques par utilisateur (`.priv`, `.pub`, `key.txt`)
+- `./users/` — Clés cryptographiques côté client (`.priv`, `.pub`, `key.txt`)
 
 **Networking :**
 - Bridge network `crypto_net` — les services communiquent par nom de conteneur
@@ -210,7 +210,7 @@ docker compose exec server id
 
 # Check volume mounts and permissions
 docker compose exec server ls -la /app/logs
-docker compose exec server ls -la /app/users
+docker compose exec client ls -la /app/users
 ```
 
 ### Test de rejet de signature (Tampering Detection)
@@ -368,7 +368,7 @@ docker compose run --rm server python test_e2ee.py          # Phase 2
 - [x] **Non-root user**: Containers run as UID 1000 (`appuser`), not root
 - [x] **Volume isolation**: 
   - `logs/` mounted RW for logging
-  - `users/` mounted RO for server (cannot modify private keys)
+  - `users/` mounted only on client (private keys never exposed to server container)
   - Client can access both RW for key generation
 - [x] **Network isolation**: Dedicated bridge network `crypto_net` (subnet: 172.28.0.0/16)
 - [x] **Dependency pinning**: Exact versions in requirements.txt to prevent supply chain attacks
