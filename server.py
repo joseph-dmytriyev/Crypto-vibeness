@@ -10,7 +10,9 @@ import os
 import sys
 from datetime import datetime
 
+import auth
 import config
+import crypto_sym
 
 # ---------------------------------------------------------------------------
 # Logging setup
@@ -32,6 +34,7 @@ clients: dict[str, "ClientSession"] = {}   # username -> ClientSession
 rooms: dict[str, dict] = {
     config.DEFAULT_ROOM: {"password": None, "members": set()}
 }
+auth_manager = auth.AuthManager()
 
 
 # ---------------------------------------------------------------------------
@@ -44,11 +47,15 @@ class ClientSession:
         self.username: str = ""
         self.room: str = config.DEFAULT_ROOM
         self.color_index: int = 0
+        self.crypto_key: bytes | None = None
 
     async def send(self, message: str) -> None:
         """Send a UTF-8 line to this client."""
         try:
-            self.writer.write((message + "\n").encode("utf-8"))
+            payload = message
+            if self.crypto_key is not None:
+                payload = crypto_sym.encrypt_message(message, self.crypto_key)
+            self.writer.write((payload + "\n").encode("utf-8"))
             await self.writer.drain()
         except (ConnectionResetError, BrokenPipeError, OSError):
             pass
@@ -56,7 +63,64 @@ class ClientSession:
     async def readline(self) -> str:
         """Read one line from the client (strips \\r\\n)."""
         data = await self.reader.readuntil(b"\n")
-        return data.decode("utf-8", errors="replace").strip()
+        line = data.decode("utf-8", errors="replace").strip()
+        if self.crypto_key is not None and line:
+            return crypto_sym.decrypt_message(line, self.crypto_key)
+        return line
+
+
+async def perform_authentication(session: ClientSession) -> bool:
+    """Run login/register flow before allowing access to rooms."""
+    for _ in range(3):
+        await session.send("Auth mode? Type 'login' or 'register':")
+        mode = (await session.readline()).strip().lower()
+
+        if mode not in {"login", "register"}:
+            await session.send("Invalid choice. Please type 'login' or 'register'.")
+            continue
+
+        await session.send("Password:")
+        password = await session.readline()
+
+        if mode == "register":
+            await session.send("Confirm password:")
+            password_confirm = await session.readline()
+            ok, message, strength = auth_manager.register_user(
+                username=session.username,
+                password=password,
+                password_confirm=password_confirm,
+            )
+            if not ok:
+                await session.send(message)
+                continue
+            await session.send(f"{message} Password strength: {strength}.")
+            return True
+
+        ok, message = auth_manager.authenticate_user(session.username, password)
+        if ok:
+            await session.send(message)
+            return True
+        await session.send(message)
+
+    await session.send("Authentication failed too many times. Goodbye.")
+    return False
+
+
+async def perform_key_handshake(session: ClientSession) -> bool:
+    """Negotiate AES transport key from a user-provided secret."""
+    await session.send("Enter your encryption secret:")
+    secret = await session.readline()
+    if not secret:
+        await session.send("Encryption secret cannot be empty. Goodbye.")
+        return False
+
+    try:
+        session.crypto_key = crypto_sym.get_or_create_server_key(session.username, secret)
+    except ValueError as exc:
+        await session.send(f"{exc}. Goodbye.")
+        return False
+
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -150,6 +214,14 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
             break
         else:
             await session.send("Too many failed attempts. Goodbye.")
+            writer.close()
+            return
+
+        if not await perform_authentication(session):
+            writer.close()
+            return
+
+        if not await perform_key_handshake(session):
             writer.close()
             return
 
