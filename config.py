@@ -1,9 +1,11 @@
 import colorama
+import os
 
 colorama.init(autoreset=True)
 
-DEFAULT_HOST = "localhost"
-DEFAULT_PORT = 9000
+# Read from environment variables for Docker compatibility, fallback to defaults
+DEFAULT_HOST = os.getenv("SERVER_HOST", "localhost")
+DEFAULT_PORT = int(os.getenv("SERVER_PORT", "9000"))
 DEFAULT_ROOM = "general"
 COLORS = [
     colorama.Fore.RED,

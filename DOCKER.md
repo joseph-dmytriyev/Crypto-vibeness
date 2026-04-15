@@ -171,34 +171,157 @@ ls -la logs/
 
 ---
 
-## Troubleshooting
+## Diagnostic & Troubleshooting (Production)
 
-### Le serveur ne démarre pas
-```bash
-docker compose up server --build
-```
-
-(Force le rebuild de l'image)
-
-### Les clients ne voient pas le serveur
-Vérifiez que le serveur est sain :
+### Status de tous les services
 ```bash
 docker compose ps
 ```
-
-Doit afficher `STATUS: Up (healthy)` pour le serveur.
-
-### Permission denied sur les volumes
-```bash
-sudo chown -R $USER:$USER logs/ users/
+Expected output:
+```
+NAME                        STATUS            PORTS
+crypto_vibeness_server      Up (healthy)      0.0.0.0:9000->9000/tcp
+crypto_vibeness_client      Up                (stdin open)
 ```
 
-### Réinitialiser complètement
+### Logs en temps réel
 ```bash
-docker compose down -v
-docker system prune -a
-docker compose up --build server
+# Server logs
+docker compose logs -f server
+
+# Client logs
+docker compose logs -f client
+
+# All logs with timestamps
+docker compose logs --timestamps
 ```
+
+### Inspecter les conteneurs
+```bash
+# Check server health status
+docker compose exec server curl -s http://localhost:9000/health 2>/dev/null || \
+  python -c "import socket; socket.create_connection(('localhost', 9000))"
+
+# Check running processes inside server
+docker compose exec server ps aux
+
+# Check user privileges (should be UID 1000, not 0)
+docker compose exec server id
+
+# Check volume mounts and permissions
+docker compose exec server ls -la /app/logs
+docker compose exec server ls -la /app/users
+```
+
+### Test de rejet de signature (Tampering Detection)
+
+Pour vérifier que les signatures RSA-PSS rejettent les messages altérés :
+
+```bash
+docker compose exec -T server python << 'EOF'
+import sys
+sys.path.insert(0, '/app')
+from e2ee import E2EEManager
+from crypto_asym import AsymmetricKeyManager
+import json
+import base64
+
+# Setup: Alice and Bob exchange keys
+alice_km = AsymmetricKeyManager('test_alice')
+bob_km = AsymmetricKeyManager('test_bob')
+alice_e2ee = E2EEManager()
+bob_e2ee = E2EEManager()
+
+alice_e2ee.register_public_key('test_bob', bob_km.get_public_key_pem().decode())
+bob_e2ee.register_public_key('test_alice', alice_km.get_public_key_pem().decode())
+
+# Alice sends a signed + encrypted message
+original_msg = "Sensitive data: account balance 1000 EUR"
+e2ee_msg = alice_e2ee.prepare_e2ee_message('test_alice', 'test_bob', original_msg)
+print(f"✓ Original message signed & encrypted")
+
+# Simulate tampering: modify the ciphertext
+msg_dict = json.loads(e2ee_msg)
+tampered_ct = base64.b64encode(
+    base64.b64decode(msg_dict['ciphertext'])[:-8] + b'HACKED!!'
+).decode()
+msg_dict['ciphertext'] = tampered_ct
+tampered_msg = json.dumps(msg_dict)
+print(f"✓ Message tampered in transit")
+
+# Bob tries to receive tampered message
+try:
+    result = bob_e2ee.receive_e2ee_message('test_alice', tampered_msg)
+    print(f"✗ SECURITY FAILURE: Tampered message was accepted!")
+    sys.exit(1)
+except Exception as e:
+    print(f"✓ SECURITY SUCCESS: Tampered message rejected")
+    print(f"  Reason: {str(e)[:60]}...")
+
+# Verify legitimate message still works
+decrypted = bob_e2ee.receive_e2ee_message('test_alice', e2ee_msg)
+assert decrypted == original_msg
+print(f"✓ Legitimate message verified & decrypted successfully")
+EOF
+```
+
+Expected output:
+```
+✓ Original message signed & encrypted
+✓ Message tampered in transit
+✓ SECURITY SUCCESS: Tampered message rejected
+  Reason: Decryption failed: invalid ciphertext...
+✓ Legitimate message verified & decrypted successfully
+```
+
+### Vérifier la persistance des clés
+```bash
+# List generated keys
+ls -lh users/
+
+# Verify key formats
+file users/alice/alice.priv   # Should be PEM text
+file users/alice/alice.pub    # Should be PEM text
+file users/alice/key.txt      # Should be binary (AES-256 key)
+```
+
+### Benchmark de performance
+```bash
+# Measure server startup time
+time docker compose up -d server
+
+# Measure healthcheck response time
+time docker compose exec server python -c \
+  "import socket; s = socket.socket(); s.connect(('localhost', 9000)); s.close()"
+
+# Measure encryption/decryption latency
+docker compose exec -T server python << 'EOF'
+import time
+from crypto_sym import SymmetricEncryption
+from crypto_asym import AsymmetricKeyManager
+
+# E2EE performance: RSA-OAEP key encapsulation
+km = AsymmetricKeyManager('bench_user')
+msg = "X" * 1000
+
+start = time.time()
+for _ in range(100):
+    km.encrypt_session_key(km.public_key)
+elapsed = time.time() - start
+print(f"RSA-OAEP (100 iterations): {elapsed*1000:.2f}ms ({elapsed*10:.2f}ms per op)")
+
+# AES-256-GCM symmetric encryption
+se = SymmetricEncryption()
+key = se.generate_session_key()
+
+start = time.time()
+for _ in range(1000):
+    se.encrypt_message(msg, key)
+elapsed = time.time() - start
+print(f"AES-256-GCM (1000 iterations): {elapsed*1000:.2f}ms ({elapsed:.3f}ms per op)")
+EOF
+```
+
 
 ---
 
@@ -239,15 +362,76 @@ docker compose run --rm server python test_e2ee.py          # Phase 2
 
 ---
 
-## Déploiement en production
+## Production Deployment Checklist
 
-⚠️ Pour production, ajouter :
+### Security Hardening
+- [x] **Non-root user**: Containers run as UID 1000 (`appuser`), not root
+- [x] **Volume isolation**: 
+  - `logs/` mounted RW for logging
+  - `users/` mounted RO for server (cannot modify private keys)
+  - Client can access both RW for key generation
+- [x] **Network isolation**: Dedicated bridge network `crypto_net` (subnet: 172.28.0.0/16)
+- [x] **Dependency pinning**: Exact versions in requirements.txt to prevent supply chain attacks
+- [x] **Healthchecks**: Server validates port 9000 listening every 10s (15s startup grace)
+- [ ] **TLS/HTTPS**: Requires reverse proxy (nginx) for encryption in transit
+- [ ] **Secrets management**: Use Docker secrets or Vault instead of .env in production
 
-1. **Secrets management** — Utiliser Docker secrets ou Vault
-2. **TLS/HTTPS** — Proxy reverse (nginx) devant le serveur
-3. **Healthchecks** — Vérifié dans `docker-compose.yml`
-4. **Resource limits** — CPU/mémoire
-5. **Logging centralisé** — ELK, Grafana, etc.
+### Performance & Resource Management
+```yaml
+# Recommended docker-compose additions for production:
+services:
+  server:
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+
+  client:
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+```
+
+### Monitoring & Logging
+- **Container logs**: Use `docker compose logs` or centralized logging (ELK, Datadog)
+- **Performance metrics**: Monitor CPU, memory, disk I/O with `docker stats`
+- **Audit logs**: All messages are signed and timestamped in `/logs/`
+- **Key rotation**: Plan rotation strategy for RSA/Ed25519 keys (currently: manual)
+
+### Deployment Steps
+```bash
+# 1. Pre-deployment validation
+./smoke_test.sh
+
+# 2. Build optimized images
+docker compose build --no-cache
+
+# 3. Push to registry (if multi-host)
+docker tag crypto_vibeness_server myregistry/crypto-vibeness:v1.0
+docker push myregistry/crypto-vibeness:v1.0
+
+# 4. Deploy with docker compose (single host) or Kubernetes
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+
+# 5. Verify health
+docker compose ps
+docker compose logs -f server
+```
+
+### Rollback Procedure
+```bash
+# If deployment fails, rollback to previous version:
+git checkout v0.9 -- Dockerfile Dockerfile.client docker-compose.yml
+docker compose down
+docker compose up -d
+```
+
 
 ---
 

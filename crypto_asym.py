@@ -104,6 +104,9 @@ class AsymmetricKeyManager:
         # Save keys to disk
         with open(priv_file, "wb") as f:
             f.write(private_pem)
+        # Restrict private key permissions to owner only (0600)
+        os.chmod(priv_file, 0o600)
+        
         with open(pub_file, "wb") as f:
             f.write(public_pem)
 
