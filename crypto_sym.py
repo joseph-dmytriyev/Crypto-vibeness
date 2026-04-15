@@ -219,3 +219,126 @@ def decrypt_message(payload_b64: str, key: bytes) -> str:
     aesgcm = AESGCM(key)
     plaintext = aesgcm.decrypt(nonce, ciphertext, None)
     return plaintext.decode("utf-8")
+
+
+# =============================================================================
+# SymmetricEncryption class (Dev 3 E2EE integration)
+# =============================================================================
+
+from typing import Tuple
+
+
+class SymmetricEncryption:
+    """
+    Handles symmetric AES-GCM encryption and decryption for E2EE.
+    
+    Each message is encrypted with a random nonce (IV) to prevent
+    pattern analysis. The nonce is prepended to the ciphertext.
+    
+    This class provides a higher-level interface for E2EE module compatibility.
+    """
+    
+    ALGORITHM = "AES-256-GCM"
+    KEY_SIZE = 32  # 256-bit key
+    NONCE_SIZE = 12  # 96-bit nonce (12 bytes) for GCM
+    TAG_SIZE = 16  # 128-bit authentication tag
+    KDF_ITERATIONS = 100000
+    
+    def __init__(self):
+        """Initialize symmetric encryption handler."""
+        pass
+    
+    @staticmethod
+    def generate_session_key() -> bytes:
+        """
+        Generate a random session key for AES-256-GCM.
+        
+        Returns:
+            bytes: 32-byte (256-bit) random key
+        """
+        return os.urandom(SymmetricEncryption.KEY_SIZE)
+    
+    def encrypt_message(self, plaintext: str, key: bytes) -> str:
+        """
+        Encrypt a plaintext message using AES-256-GCM.
+        
+        The output format is: base64(nonce || ciphertext || tag)
+        
+        Args:
+            plaintext: Message to encrypt (str)
+            key: Session key (32 bytes for AES-256)
+        
+        Returns:
+            str: Base64-encoded encrypted message (nonce + ciphertext + tag)
+        """
+        if len(key) != SymmetricEncryption.KEY_SIZE:
+            raise ValueError(f"Key must be {SymmetricEncryption.KEY_SIZE} bytes, got {len(key)}")
+        
+        # Generate a random nonce for this message
+        nonce = os.urandom(SymmetricEncryption.NONCE_SIZE)
+        
+        # Create cipher object and encrypt
+        cipher = AESGCM(key)
+        ciphertext = cipher.encrypt(nonce, plaintext.encode('utf-8'), None)
+        
+        # Combine nonce + ciphertext (tag is already appended by AESGCM)
+        payload = nonce + ciphertext
+        
+        # Return base64-encoded payload
+        return base64.b64encode(payload).decode('utf-8')
+    
+    def decrypt_message(self, payload_b64: str, key: bytes) -> str:
+        """
+        Decrypt a message encrypted with encrypt_message.
+        
+        Args:
+            payload_b64: Base64-encoded encrypted message
+            key: Session key (32 bytes for AES-256)
+        
+        Returns:
+            str: Decrypted plaintext message
+        """
+        if len(key) != SymmetricEncryption.KEY_SIZE:
+            raise ValueError(f"Key must be {SymmetricEncryption.KEY_SIZE} bytes, got {len(key)}")
+        
+        try:
+            # Decode from base64
+            payload = base64.b64decode(payload_b64.encode('utf-8'))
+            
+            # Extract nonce and ciphertext
+            nonce = payload[:SymmetricEncryption.NONCE_SIZE]
+            ciphertext = payload[SymmetricEncryption.NONCE_SIZE:]
+            
+            # Create cipher object and decrypt
+            cipher = AESGCM(key)
+            plaintext = cipher.decrypt(nonce, ciphertext, None)
+            
+            return plaintext.decode('utf-8')
+        except Exception as e:
+            raise ValueError(f"Decryption failed: {str(e)}")
+    
+    def derive_key_from_password(
+        self, password: str, salt: bytes = None
+    ) -> Tuple[bytes, bytes]:
+        """
+        Derive an AES-256 key from a password using PBKDF2.
+        
+        Args:
+            password: Password string
+            salt: Optional salt (if None, generates random 32-byte salt)
+        
+        Returns:
+            Tuple[bytes, bytes]: (derived_key, salt) both 32 bytes
+        """
+        if salt is None:
+            salt = os.urandom(32)
+        
+        kdf = PBKDF2HMAC(
+            algorithm=hashes.SHA256(),
+            length=SymmetricEncryption.KEY_SIZE,
+            salt=salt,
+            iterations=SymmetricEncryption.KDF_ITERATIONS,
+        )
+        
+        key = kdf.derive(password.encode('utf-8'))
+        return key, salt
